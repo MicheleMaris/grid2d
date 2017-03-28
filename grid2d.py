@@ -1,4 +1,4 @@
-__version__="""M.Maris, 1.2 -  - 27 Nov 2012 -"""
+__version__="""M.Maris, 1.3 -  - 27 Nov 2012 - 26 Dec 2016 -"""
 __DESCRIPTION__="""
 A grid 2d is a 2x2 array representing a grid
 At the moment no DS9 support is directly provided
@@ -392,105 +392,237 @@ class MapGrid() :
       """
       A map gridded
       MpG = MapGrid() an empty map
+      
+      #deprecated methods
       MpG = MapGrid(mapname) a map loaded from a pickle file with name mapname
-      MpG = MapGrid(dictionary) a map with elements copied from the dictionary
       MpG = MapGrid(nrows,ncols) a map with nrows, ncols
-      def __init__(self,mapname,xname,xmin,xmax,nx,xunit,yname,ymin,ymax,ny,yunit,reference_x=None,reference_y=None)"""
+      #def __init__(self,mapname,xname,xmin,xmax,nx,xunit,yname,ymin,ymax,ny,yunit,reference_x=None,reference_y=None)
+      
+      #preferred methods
+      MpG = MapGrid(pickle=mapname) a map loaded from a pickle file with name mapname
+      MpG = MapGrid(Rows=nrows,Cols=ncols) a map with nrows, ncols
+      MpG = MapGrid(Rows=numpy_array1d,Cols=numpy_array1d) a map with rows and cols listed as numpy 1d arrays
+      MpG = MapGrid(Rows=GridAxisRows,Cols=GridAxisCols) a map with rows and cols specified by GridAxis objects
+      MpG = MapGrid(model=numpy_array2d) a map with format specified by a 2D numpy array taken as model
+
+      keyword mapname sets a name to a map
+      """
       import numpy as np
       import pickle
       import copy
-      self.clean()
+      _Verbose = kopt.has_key('Verbose')==True if kopt.has_key('Verbose') else False
+      self.clean(__verbose__=_Verbose)
       #print len(karg)
       if len(karg) == 0 :
+         kkopt=kopt.copy()
+         if len(kopt) == 0 : 
+            return
+         if kopt.has_key('mapname') :
+            self.mapname=kopt['mapname']
+         if kopt.has_key('pickle') :
+            self.getFromPickle(kopt['pickle'])
+            return
+         if kopt.has_key('fits') :
+            self.getFromFits(kopt['fits'])
+            return
+         if kopt.has_key('model') :
+            self.createBaseGrid_from_model(kopt['model'],**kopt)
+            return
+         if kopt.has_key('Rows') and kopt.has_key('Cols'):
+            if type(kopt['Rows'])==type(0) and type(kopt['Cols'])==type(0) :
+               self.createBaseGrid_from_nrowsncols(*karg,**kopt)
+               return
+            elif type(kopt['Rows'])==type(np.array([])) and type(kopt['Cols'])==type(np.array([])) :
+               kkopt['Cols']=GridAxis('x','',kopt['Cols'])
+               kkopt['Rows']=GridAxis('y','',kopt['Rows'])
+               self.createBaseGrid_from_gridaxis(*karg,**kkopt)
+               return
+            elif kopt['Rows'].__class__==GridAxis().__class__ and kopt['Cols'].__class__==GridAxis().__class__ :
+               self.createBaseGrid_from_gridaxis(*karg,**kopt)
+               return
+            elif type(kopt['Rows'])==type({}) and type(kopt['Cols'])==type({}) :
+               kkopt=kopt.copy()
+               kkopt['Rows'] = GridAxis(kopt['Rows'])
+               kkopt['Cols'] = GridAxis(kopt['Cols'])
+               self.createBaseGrid_from_gridaxis(*karg,**kkopt)
+               return
+            else :
+               if _Verbose : print "Unknown signature, empy object created"
+               return
          return
       if len(karg)==1 :
+         kkopt = kopt.copy() 
          if type(karg[0]) == type('') :
-            try :
-               self=pickle.load(open(karg[0],'r'))
-               self.picke_name=karg[0]
-            except :
-               raise Error('Pickle %s not found or unreadable'%karg[0])
-               return
-         elif type(karg[0]) == type({}) :
-            self=copy.deepcopy(karg[0])
-         else :
-            raise Error('Not valid argument in __init___')
+            kkopt['pickle']=karg[0]
+            self.getFromPickle(self,*karg,**kkopt)
             return
-      #elif type(karg[0]) == type({}) :
+         elif type(karg[0]) == type(np.array()):
+            kkopt['model']=karg[0]
+            self.createBaseGrid_from_model(karg[0],**kkopt)
+            return
+         else :
+            if _Verbose : print "Unknown signature, empy object created"
+            return
       if len(karg)==2 :
-         #print "2 inputs of type ",karg[0].__class__ ,karg[1].__class__ 
-         self.C=None
-         self.R=None
-         if karg[0].__class__ == GridAxis().__class__ : 
-            self.C = karg[0].__dict__
-            self.ncols=len(karg[0])
-         if karg[1].__class__ == GridAxis().__class__ : 
-            self.R = karg[1].__dict__
-            self.nrows=len(karg[0])
-         if type(karg[0]) == type(0) : self.nrows=karg[0]
-         if type(karg[1]) == type(0) : self.ncols=karg[1]
+         kkopt = kopt.copy() 
          if type(karg[0]) == type(0) and type(karg[1]) == type(0) :
-            self.C = GridAxis().__dict__
-            self.R = GridAxis().__dict__
-            self.set_col_scale('x','',np.arange(self.ncols))
-            self.set_row_scale('y','',np.arange(self.nrows))
-         if self.C != None :
-            self.M['_col_index']=np.zeros([self.R['n'],self.C['n']],dtype='int')
-            self.M['_col_values']=np.zeros([self.R['n'],self.C['n']],dtype='float')
-            for ic in range(self.C['n']) : 
-               self.M['_col_index'][:,ic] = ic
-               self.M['_col_values'][:,ic] = self.C['v'][ic]
-         else :
-            self.C=GridAxis().__dict__
-         if self.R != None :
-            self.M['_row_index']=np.zeros([self.R['n'],self.C['n']],dtype='int')
-            self.M['_row_values']=np.zeros([self.R['n'],self.C['n']],dtype='float')
-            for ir in range(self.R['n']) : 
-               self.M['_row_index'][ir] = ir
-               self.M['_row_values'][ir] = self.R['v'][ir]
-         else :
-            self.R=GridAxis().__dict__
+            kkopt['Rows']=karg[1]
+            kkopt['Cols']=karg[0]
+            self.createBaseGrid_from_nrowsncols(*karg,**kkopt)
+         elif karg[0].__class__==GridAxis().__class__ and karg[1].__class__==GridAxis().__class__ :
+            kkopt['Rows']=karg[1]
+            kkopt['Cols']=karg[0]
+            self.createBaseGrid_from_gridaxis(*karg,**kkopt)
+         elif type(karg[0]) == type(0) and type(karg[1]) == type(0) :
+            kkopt['Rows']=karg[1]
+            kkopt['Cols']=karg[0]
+         return
+
+   def isVerbose(self) : return self.__verbose__
+
    def newaxis(self) :
       return GridAxis().__dict__
-   #def newaxis(self) :
-      #from numpy import nan
-      #C = {}
-      #C['name']=''
-      #C['delta']=nan
-      #C['min']=nan
-      #C['max']=nan
-      #C['n']=0
-      #C['unit']=''
-      #C['v']=None
-      #C['closed']=False
-      #C['label']=False
-      #return C
-   def clean(self) :
+
+   def clean(self,shape=None,__verbose__=False) :
+      from collections import OrderedDict
       from numpy import nan,zeros
-      self.info={}
+      self.info=OrderedDict()
       self.mapname = ''
       # sets the phi along the x axis of the grid i.e. the columns
       self.C = GridAxis().__dict__
       # sets the theta along the y axis of the grid  i.e. the rows
       self.R = GridAxis().__dict__
       # sets the remaining 
-      self.naxis=2
-      self.shape=[0,0]
-      self.center=zeros(2)
-      self.centerRow=-1
-      self.centerCol=-1
+      self.naxis=2 if shape == None else len(list(shape))
+      self.shape=[0,0] if shape == None else list(shape)
+      self.center=zeros(2) if shape == None else np.array([int(shape[0]/2),int(shape[1]/2)])
+      self.centerRow=-1 if shape == None else int(shape[0]/2)
+      self.centerCol=-1 if shape == None else int(shape[1]/2)
       self.pickle_name = ''
-      self.M={}
-      self.unit={}
-      self.f={}
+      self.fits_name = ''
+      self.M=OrderedDict()
+      self.unit=OrderedDict()
+      self.f=OrderedDict()
+      self.ncols=self.shape[1]
+      self.nrows=self.shape[0]
+      self.map_info=OrderedDict()
+      self.__verbose__=__verbose__
+
+   def createBaseGrid_empty(self,*karg,**kopt) :
+      """creates a base grid empty after a clean(shape=shape)"""
+      #
+      if kopt.has_key('mapname') : self.mapname=kopt['mapname']
+      #
+      self.C = GridAxis().__dict__
+      self.R = GridAxis().__dict__
+      xname = 'x' if not kopt.has_key('xname') else kopt['xname'] 
+      yname = 'y' if not kopt.has_key('yname') else kopt['yname'] 
+      xunit = '' if not kopt.has_key('xunit') else kopt['xunit'] 
+      yunit = '' if not kopt.has_key('yunit') else kopt['yunit'] 
+      self.set_col_scale(xname,xunit,np.arange(self.ncols))
+      self.set_row_scale(yname,yunit,np.arange(self.nrows))
+      #
+      self.map_info['_col_index']={'comment':'index of cols','private':True}
+      self.map_info['_col_values']={'comment':'values of cols','private':True}
+      self.M['_col_index']=np.zeros([self.R['n'],self.C['n']],dtype='int')
+      self.M['_col_values']=np.zeros([self.R['n'],self.C['n']],dtype='float')
+      for ic in range(self.C['n']) : 
+         self.M['_col_index'][:,ic] = ic
+         self.M['_col_values'][:,ic] = self.C['v'][ic]
+      #        
+      self.map_info['_row_index']={'comment':'index of rows','private':True}
+      self.map_info['_row_values']={'comment':'values of rows','private':True}
+      self.M['_row_index']=np.zeros([self.R['n'],self.C['n']],dtype='int')
+      self.M['_row_values']=np.zeros([self.R['n'],self.C['n']],dtype='float')
+      for ir in range(self.R['n']) : 
+         self.M['_row_index'][ir] = ir
+         self.M['_row_values'][ir] = self.R['v'][ir]
+         
+   def createBaseGrid_from_model(self,*karg,**kopt) :
+      """creates a base grid from a model map or a dictionary of model maps"""
+      from collections import OrderedDict
+      if kopt.has_key('verbose') : 
+         if kopt['verbose'] :
+            print "createBaseGrid from model",karg,kopt
+      if type(kopt['model']) == type({}) or type(kopt['model']) == type(OrderedDict()) :
+         lk=kopt['model'].keys()
+         MapGrid.clean(self,shape=kopt['model'][lk[0]].shape)
+         self.createBaseGrid_empty(*karg,**kopt)
+         for k in lk :
+            self.newmap(k,value=kopt['model'][k].copy())
+            self.map_info[k]={'comment':'map '+k,'private':False}
+         return
+      MapGrid.clean(self,shape=kopt['model'].shape)
+      self.createBaseGrid_empty(*karg,**kopt)
+      self.newmap('model',value=kopt['model'].copy())
+      self.map_info['model']={'comment':'model map','private':False}
+
+   def createBaseGrid_from_nrowsncols(self,*karg,**kopt) :
+      """creates a base grid"""
+      if kopt.has_key('verbose') : 
+         if kopt['verbose'] :
+            print "createBaseGrid ",karg,kopt
+      MapGrid.clean(self,shape=[kopt['Rows'],kopt['Cols']])
+      self.createBaseGrid_empty(*karg,**kopt)
+
+   def createBaseGrid_from_gridaxis(self,*karg,**kopt) :
+      """creates a base grid"""
+      if kopt.has_key('verbose') : 
+         if kopt['verbose'] :
+            print "createBaseGrid ",karg,kopt
+      MapGrid.clean(self)
+      #
+      if kopt.has_key('mapname') : self.mapname=kopt['mapname']
+      #
+      self.C = kopt['Cols'].__dict__
+      self.ncols=len(kopt['Cols'])
+      #
+      self.R = kopt['Rows'].__dict__
+      self.nrows=len(kopt['Rows'])
+      #
+      self.map_info['_col_index']={'comment':'index of cols','private':True}
+      self.map_info['_col_values']={'comment':'values of cols','private':True}
+      self.M['_col_index']=np.zeros([self.R['n'],self.C['n']],dtype='int')
+      self.M['_col_values']=np.zeros([self.R['n'],self.C['n']],dtype='float')
+      for ic in range(self.C['n']) : 
+         self.M['_col_index'][:,ic] = ic
+         self.M['_col_values'][:,ic] = self.C['v'][ic]
+      #
+      self.map_info['_row_index']={'comment':'index of rows','private':True}
+      self.map_info['_row_values']={'comment':'values of rows','private':True}
+      self.M['_row_index']=np.zeros([self.R['n'],self.C['n']],dtype='int')
+      self.M['_row_values']=np.zeros([self.R['n'],self.C['n']],dtype='float')
+      for ir in range(self.R['n']) : 
+         self.M['_row_index'][ir] = ir
+         self.M['_row_values'][ir] = self.R['v'][ir]
+
+   def createBaseGrid(self,*karg,**kopt) :
+      """creates a base grid"""
+      kkopt=kopt.copy()
+      kkopt['Cols']=karg[1]
+      kkopt['Rows']=karg[0]
+      self.createBaseGrid_from_nrowsncols(*karg,**kkopt)
+
+   def getFromPickle(self,*karg,**kopt) :
+      """get from pickle file"""
+      if type(karg[0]) == type('') :
+         try :
+            self=pickle.load(open(karg[0],'r'))
+            self.picke_name=karg[0]
+         except :
+            raise Error('Pickle %s not found or unreadable'%karg[0])
+            return
+
    def pickle(self,fname) :
       import pickle
       f=open(fname,'w')
       pickle.dump(self.__dict__,f)
       f.close()
+
    def load(self,fname) :
       import pickle
       self.__dict__= pickle.load(open(fname,'r'))
+
    def slice(self,row_min=0,row_max=-1,col_min=0,col_max=-1) :
       """extract a subgrid in the range [row_min:row_max,col_min:col_max] 
          row_max=-1 is the last row
@@ -527,7 +659,32 @@ class MapGrid() :
       new.shape=[new.R['n'],new.C['n']]
       new.centerRow=int(np.floor(new.R['n']/2))-1*(np.mod(new.R['n'],2) == 0)
       new.centerCol=int(np.floor(new.C['n']/2))-1*(np.mod(new.C['n'],2) == 0)
-      print new.centerRow,new.centerCol
+      new.center[0]=new.R['v'][new.centerRow]
+      new.center[1]=new.C['v'][new.centerCol]
+      return new
+   def slice_row(self,irow_list) :
+      """creates a submap whose rows are listes in irow_list
+      """
+      import copy
+      import numpy as np
+      # copies the object but the matrices or vectors
+      new = self.copy()
+      # resizes R
+      new.R = copy.deepcopy(self.R)
+      new.R['v']=self.R['v'][irow_list]
+      new.R['n']=len(new.R['v'])
+      new.R['min']=new.R['v'].min()
+      new.R['max']=new.R['v'].max()
+      new.R['closed']=False
+      # resizes M
+      for k in self.M.keys() :
+         k1 = k if k!='_row_index' else '_original'+k
+         new.M[k1]=self.M[k][irow_list]
+      new.M['_row_index'] = new.zeros(dtype='int')
+      for k in range(new.R['n']) : new.M['_row_index'][k]=k
+      new.shape=new.SHAPE()
+      new.centerRow=int(np.floor(new.R['n']/2))-1*(np.mod(new.R['n'],2) == 0)
+      new.centerCol=int(np.floor(new.C['n']/2))-1*(np.mod(new.C['n'],2) == 0)
       new.center[0]=new.R['v'][new.centerRow]
       new.center[1]=new.C['v'][new.centerCol]
       return new
@@ -549,7 +706,7 @@ class MapGrid() :
       idxC=np.where(flag)[0]
       if len(idxC) == 0 :
          #idxC=np.array([np.where(xmin <= self.C['v'])[0][0]])
-         print "Error, extremes outside boundary, or both within an interval"
+         raise Error("Error, extremes outside boundary, or both within an interval")
          return None
       xminXT=False ; xmaxXT=False  
       if xmin < self.C['v'][idxC[0]] and idxC[0] > 0 : 
@@ -568,7 +725,7 @@ class MapGrid() :
       idxR=np.where(flag)[0]
       if len(idxR) == 0 :
          #idxR=np.array([np.where(ymin <= self.R['v'])[0][0]])
-         print "Error, extremes outside boundary, or both within an interval"
+         raise Error("Error, extremes outside boundary, or both within an interval")
          return None
       yminXT=False ; ymaxXT=False  
       if ymin < self.R['v'][idxR[0]] and idxR[0] > 0 : 
@@ -653,14 +810,6 @@ class MapGrid() :
          except :
             raise Error("invalid argument")
       else :
-         #if len(l) > self.naxis :
-            #raise Error("invalid argument")
-         #l=self.__dict__[args[0]]
-         #for ik in range(1,len(args)) : 
-            #try :
-               #l=l[args[ik]]
-            #except :
-               #raise Error(("Some error extracting element %d of "%ik)+str(args))
          raise Error("invalid argument")
    def refresh(self) :
       if self.naxis == 2 :
@@ -668,7 +817,15 @@ class MapGrid() :
       elif self.naxis == 3 :
          self.shape=(self.R['n'],self.C['n'],self.Z['n'])
       else :
-         print "Inconsistent naxis"
+         raise Error("Inconsistent naxis")
+   def idx2colrow(self,idx) :
+      "given a idx (a pixel number) returns corresponding col,row "
+      import numpy as np
+      return np.mod(idx,self.shape[1]),idx/self.shape[1]
+   def colrow2idx(self,col,row) :
+      "given col,row returns corresponding a idx (a pixel number) "
+      import numpy as np
+      return col+row*self.shape[1]
    def xy2colrow(self,x,y) :
      """xy to col row"""
      return (x-self.C['min'])/self.C['delta'],(y-self.R['min'])/self.R['delta']
@@ -682,7 +839,7 @@ class MapGrid() :
       ii=self.naxis if (self.naxis <= maxdim) or (maxdim<=0) or maxdim==None else maxdim
       return zeros(list(self.SHAPE()),dtype=dtype)
       #return zeros(list(self.shape)[0:(maxdim+1)],dtype=dtype)
-   def newmap(self,name,unit='',value=None,dtype='float') :
+   def newmap(self,name,unit='',value=None,dtype='float',comment='') :
      from numpy import nan,zeros
      self.M[name] = self.zeros(dtype=dtype)
      self.unit[name] = unit
@@ -736,7 +893,7 @@ class MapGrid() :
          self.R['delta'] = self.R['v'][1]-self.R['v'][0]
       else :
          if len(karg) < 4 :
-            print "error: not enough arguments"
+            raise Error("error: not enough arguments")
             return
          self.R['min']=karg[2]
          self.R['max']=karg[3]
@@ -791,7 +948,7 @@ class MapGrid() :
          self.C['delta'] = self.C['v'][1]-self.C['v'][0]
       else :
          if len(karg) < 4 :
-            print "error: not enough arguments"
+            raise Error("error: not enough arguments")
             return
          self.C['min']=karg[2]
          self.C['max']=karg[3]
@@ -925,7 +1082,6 @@ class MapGrid() :
       else :
          ln = args
       for k in ln :
-         print k,kind
          self.f[k]=interpolate.interp2d(self.R['v'],self.C['v'],self.M[k],kind=kind)
    def interpolate(self,name,x_col,y_row) :
       from numpy import array
@@ -943,7 +1099,7 @@ class MapGrid() :
          try :
             return self.f[k](y_row,x_col)
          except :
-            print "Matrix %s not found or out of bounds"%name
+            raise Error("Matrix %s not found or out of bounds"%name)
             return None
    def copy(self,skipFields=None) :
       import copy
@@ -1056,28 +1212,21 @@ class MapGrid() :
       else :
          retVal = returnVal*1
       row,col = self.XY2RowCol(x_col,y_row)
-      #print row
-      #print col
+      #
       drow=mod(row,1)
       dcol=mod(col,1)
       row00,badR00=self.rowClip(array(floor(row),dtype='int'),0)
       row01 = row00
       row10,badR10 = self.rowClip(row00,1)
       row11 = row10
-      #print row00,row01
-      #print row10,row11
-      #print badR00
-      #print badR10
+      #
       col00,badC00=self.colClip(array(floor(col),dtype='int'),0)
       col00=array(col00,dtype='int')
       col10=col00
       col01,badC01=self.colClip(col00,1)
       col01=array(col01,dtype='int')
       col11=col01
-      #print col00,col01
-      #print col10,col11
-      #print badC00
-      #print badC01
+      #
       if type(component)==type('') :
          V00 = self.M[component][row00,col00]
          V01 = self.M[component][row01,col01]
@@ -1098,35 +1247,70 @@ class MapGrid() :
       if returnDelta : 
          return result,dcol,drow
       return result
-   def imshow(self,component,slicep=None,dbi=False,log=False,bar=False,xticks=True,yticks=True,maptitle=None,vmin=None,vmax=None,cmap='hsv',interpolation='nearest',newfig=True) :
+   def imshow(self,component,**karg) :
       from matplotlib import pyplot as plt
       from scipy import interp
       from matplotlib import cm
+      #
+      kkarg=karg.copy()
+      if not kkarg.has_key('bar') : kkarg['bar']=False
+      if not kkarg.has_key('cmap') : kkarg['cmap']='hsv'
+      if not kkarg.has_key('dbi') : kkarg['dbi']=False
+      if not kkarg.has_key('log') : kkarg['log']=False
+      if not kkarg.has_key('slices') : kkarg['slices']=None
+      if not kkarg.has_key('xticks') : kkarg['xticks']=True
+      if not kkarg.has_key('yticks') : kkarg['yticks']=True
+      if not kkarg.has_key('maptitle') : kkarg['maptitle']=None
+      if not kkarg.has_key('vmin') : kkarg['vmin']=None
+      if not kkarg.has_key('vmax') : kkarg['vmax']=None
+      if not kkarg.has_key('interpolation') : kkarg['interpolation']=None
+      if not kkarg.has_key('newfig') : kkarg['newfig']=True
+      if not kkarg.has_key('DrawOrShow') : kkarg['DrawOrShow']='show'
+      #
+      DrawOrShow=kkarg.pop('DrawOrShow')
+      #
+      cmap=kkarg.pop('cmap')
       if type(cmap) == type("") :
          try :
             _cm=cm.__dict__[cmap]
          except :
-            print "required cmap ",cmap," no found, replaced with 'hsv'"
-            print "allowed values "
-            print cm.__dict__.keys()
+            if self.isVerbose() :
+               print "required cmap ",cmap," no found, replaced with 'hsv'"
+               print "allowed values "
+               print cm.__dict__.keys()
       else :
          _cm=cmap
+      #
+      xticks=kkarg.pop('xticks')
       if xticks.__class__!=[].__class__ and xticks.__class__!=().__class__ and xticks.__class__!=np.array([]).__class__ : 
          _xticks=xticks!= None and xticks!= False 
       else :
          _xticks=True
+      yticks=kkarg.pop('yticks')
       if yticks.__class__!=[].__class__ and yticks.__class__!=().__class__ and yticks.__class__!=np.array([]).__class__ :
          _yticks = yticks!= None and yticks!= False 
       else :
          _yticks=True
+      #
+      newfig=kkarg.pop('newfig')
+      maptitle=kkarg.pop('maptitle')
+      slices=kkarg.pop('slices')
+      dbi=kkarg.pop('dbi')
+      log=kkarg.pop('log')
+      bar=kkarg.pop('bar')
+      #
       if newfig : plt.figure()
+      #
+      kkarg['cmap']=_cm
+      kkarg['origin']='lower'
       if type(component) == type('') :
          if self.naxis != 2 and slicep==None : raise Error("imshow() needs to define the slice")
-         print 'component is a string'
-         print component
+         if self.isVerbose() :
+            print 'component is a string ',
+            print component
          title=component+''
          if type(maptitle) == type('') : title = maptitle+title
-         print title
+         if self.isVerbose() : print title
          if self.naxis == 2 :
             mm = self[component]
          elif self.naxis == 3 :
@@ -1134,26 +1318,26 @@ class MapGrid() :
          else :
             raise Error("imshow() for naxis not 2 or 3")
          if dbi :
-            plt.imshow(10*np.log10(mm),origin='lower',vmin=vmin,vmax=vmax,cmap=_cm,interpolation=interpolation)
+            plt.imshow(10*np.log10(mm),**kkarg)
             title+=', dbi'
          elif log :
-            plt.imshow(np.log10(mm),origin='lower',vmin=vmin,vmax=vmax,cmap=_cm,interpolation=interpolation)
+            plt.imshow(np.log10(mm),**kkarg)
             title+=', log'
          else :
-            plt.imshow(mm,origin='lower',vmin=vmin,vmax=vmax,cmap=_cm,interpolation=interpolation)
+            plt.imshow(mm,**kkarg)
       else :
-         print 'component is an array'
+         if self.isVerbose() : print 'component is an array'
          title=''
          if type(maptitle) == type('') : title = maptitle
-         print title
+         if self.isVerbose() : print title
          if dbi :
-            plt.imshow(10*np.log10(component),origin='lower',vmin=vmin,vmax=vmax,cmap=_cm,interpolation=interpolation)
+            plt.imshow(10*np.log10(component),**kkarg)
             title+=', dbi'
          elif log :
-            plt.imshow(np.log10(component),origin='lower',vmin=vmin,vmax=vmax,cmap=_cm,interpolation=interpolation)
+            plt.imshow(np.log10(component),**kkarg)
             title+=', log'
          else :
-            plt.imshow(component,origin='lower',vmin=vmin,vmax=vmax,cmap=_cm,interpolation=interpolation)
+            plt.imshow(component,**kkarg)
       if bar!=False and bar !='' and bar != None: 
          if bar == True or bar == 'v' or bar == 'V' :
             plt.colorbar(orientation='vertical')
@@ -1200,7 +1384,10 @@ class MapGrid() :
          yt1=self.M['_row_index'][:,0]
       plt.yticks(xt,interp(xt,xt1,yt1))
       plt.title(title)
-      plt.show()
+      if DrawOrShow.lower().strip()=='show' :
+         plt.show()
+      else :
+         plt.draw()
    def contour(self,arg,Levels=None,labelLevels=True,lw=2,colors='k') :
       """overlaps a contour plot over an imshow
       returns Contours Object and Labels Object
@@ -1354,9 +1541,9 @@ class MapGrid() :
       try :
          self.M[_new]=10*np.log10(self[mapname])
       except :
-         print "Impossible to create %s "%_new
+         raise Error("Impossible to create %s "%_new)
          return None
-      print "Created %s "%_new
+      if self.isVerbose() : "Created %s "%_new
       return _new
    def minimax(self,mapname) :
       "return min and max values of map mapname avoiding NaN and infinite numbers"
@@ -1388,6 +1575,42 @@ class MapGrid() :
       except :
          unit='none'
       return pyfits.Column(name=arg,unit=unit,format=fmt,array=self[arg])
+   def row_fft(self,argument,axis=-1,return_freq=False,shifted=False) :
+      """returns the row by row FFT of 'argument'
+         argument can be either a name or matrix
+         if return_freq=True returns just the frequencies
+         if shifted=True applies fftshift to have 0 freq at center
+      """
+      import numpy as np
+      if return_freq :
+         rf=np.fft.fftfreq(self.SHAPE()[self.C['n']]) 
+         if shifted :
+            rf=np.fft.fftshift(rf) 
+         return rf
+      f=self.zeros()*1j
+      if type(argument) == type('') :
+         for k in range(self.R['n']) :
+            f[k]=np.fft.fft(self[argument][k])
+      else :
+         for k in range(self.R['n']) :
+            f[k]=np.fft.fft(argument[k],axis=-1)
+      if shifted :
+         for k in range(self.R['n']) :
+            f[k]=np.fft.fftshift(f[k],axis=-1) 
+      return f
+   def row_ifft(self,argument) :
+      """returns the row by row IFFT of 'argument'
+         argument can be either a name or matrix
+      """
+      import numpy as np
+      ift=self.zeros()*1j
+      if type(argument) == type('') :
+         for k in range(self.R['n']) :
+            ift[k]=np.fft.ifft(self[argument][k])
+      else :
+         for k in range(self.R['n']) :
+            ift[k]=np.fft.ifft(argument[k],axis=-1)
+      return ift
    def fitsTable(self,*arg,**karg) :
       """convert to a fits table
          doNotAddPrivateTables = True only tables which are not private are added
@@ -1422,8 +1645,9 @@ class MapGrid() :
                excluded.index(k)
             except :
                names.append(k)
-      print names
-      print excluded
+      if self.isVerbose() :
+         print names
+         print excluded
       thdu=[]
       for k in names :
          thdu.append(self.map2fitsTableColumn(k))
@@ -1462,273 +1686,76 @@ class MapGrid() :
       fthdu.header.add_comment('  if rasterized columns are 1D ')
       fthdu.header.add_comment('  rows sequentially concatenated')
       return fthdu
-   def get_fitsTable(self,filename) :
+   def get_fitsTable(self,filename,ihdu=1,Verbose=False) :
       """gets a fits table"""
+      import numpy as np
       import pyfits
-      print "Under Development, nothing done"
-      return
-      self.p=pyfits.open(filename)
-   
-   #def mc2d(self,mapname,numsmp,innerCut=None,outerCut=None) :
-      #"""returns the montecarlo integration of a map
-      #"""
-      #import numpy as np
-      #ux=numpy.random.uniform(numsmp)*(self.C['max']-self.C['min'])+self.C['min']
-      #uy=numpy.random.uniform(numsmp)*(self.R['max']-self.R['min'])+self.R['min']
-      #uv=self.
-      
-      #w=self.trapz2dWeights()*0.25
-      #if not doNotScaleByCellArea : w*=self.cellArea()
-      #if type(mapname) == type('') :
-         #itg=self.cutted_map(w*self[mapname],innerCut=innerCut,outerCut=outerCut,cuttedValue=0.)
-      #else :
-         #itg=self.cutted_map(w*mapname,innerCut=innerCut,outerCut=outerCut,cuttedValue=0.)
-      #if returnItg : return itg
-      #itg.shape=itg.shape[0]*itg.shape[1]
-      #if sortArray : return np.sort(itg).sum()
-      #return itg.sum()
-   #def __init__(self,pixsize_deg=None,map_radius_deg=None,center_long_deg=None,center_long_rad=None,center_colat_deg=None,center_colat_rad=None,pickle_name=None) :
-      #self.pickle_name=None
-      #self.center=None
-      #self.pixsize=None
-      #self.map_radius=None
-      #self.long=None
-      #self.colat=None
-      #self.NameCols=None
-      #self.NameRows=None
-      #self.NameX=None
-      #self.NameY=None
-      #self.NCols=None
-      #self.NRows=None
-      #self.CenterRow=None
-      #self.CenterCol=None
-      #self.mapCols=None
-      #self.mapRows=None
-      #self.mapX=None
-      #self.mapY=None
-      #self.mapZ=None
-      #self.SPATable = None
-      
-      #if pickle_name != None :
-         #return self.load(pickle_name)
-      #else :
-         #if center_long_rad != None :
-            #_clo = _ANGLE(rad=center_long_rad)
-         #if center_long_deg != None :
-            #_clo = _ANGLE(deg=center_long_deg)
-         
-         #if center_colat_rad != None :
-            #_cla = _ANGLE(rad=center_colat_rad)
-         #if center_colat_deg != None :
-            #_cla = _ANGLE(deg=center_colat_deg)
-            
-         #self.center=_CENTER(_clo.deg,_cla.deg)
-         
-         #self.pixsize=_ANGLE(deg=pixsize_deg)
-         #self.map_radius=_ANGLE(deg=map_radius_deg)
-         
-         #side_pxl = np.long(np.ceil(self.map_radius.deg*2/self.pixsize.deg))
-         #ipxl = np.arange(side_pxl+1)
-         
-         
-               
-         ##np.arange(self.center.long.deg-self.map_radius.deg,self.center.long.deg+self.map_radius.deg+self.pixsize.deg,self.pixsize.deg))
-         ##self.colat = _ANGLE(deg=np.arange(self.center.colat.deg-self.map_radius.deg,self.center.colat.deg+self.map_radius.deg+self.pixsize.deg,self.pixsize.deg))
-         
-         
-         #self.NameCols = 'Colat'
-         #self.NameRows = 'long'
-         
-         #self.NameY = self.NameRows
-         #self.NameX = self.NameCols
-         
-         ##self.NCols = len(self.columns())
-         ##self.NRows = len(self.rows())
-         #self.NCols = len(ipxl)
-         #self.NRows = len(ipxl)
-         
-         #self.CenterRow = np.floor(self.NRows/2)
-         #self.CenterCol = np.floor(self.NCols/2)
-   
+      self._p=pyfits.open(filename)
+      self._h=self._p[ihdu].header 
+      self.mapname=self._h['mapname']
+      #
+      for k in self.C.keys() :
+         nname='col_'+k 
+         try :
+            self.C[k]=self._h[nname]
+         except :
+            nname='hierarch col_'+k 
+            try :
+               self.C[k]=self._h[nname]
+            except :
+               pass
+      self.C['v']=np.arange(self.C['n'])/float(self.C['n'])*(self.C['max']-self.C['min'])+self.C['min']
+      try :
+         if not np.isfinite(self.C['delta']) :
+            self.C['delta']=self.C['v'][1]-self.C['v'][0]
+      except :
+         self.C['delta']=self.C['v'][1]-self.C['v'][0]
+      #
+      for k in self.R.keys() :
+         nname='row_'+k 
+         try :
+            self.R[k]=self._h[nname]
+         except :
+            nname='hierarch row_'+k 
+            try :
+               self.R[k]=self._h[nname]
+            except :
+               pass
+      self.R['v']=np.arange(self.R['n'])/float(self.R['n'])*(self.R['max']-self.R['min'])+self.R['min']
+      try :
+         if not np.isfinite(self.R['delta']) :
+            self.R['delta']=self.R['v'][1]-self.R['v'][0]
+      except :
+         self.R['delta']=self.R['v'][1]-self.R['v'][0]
+      self.shape=self.SHAPE()
+      #
+      for iaxis in range(1,self._h['TFIELDS']+1) :
+         kTYPE='TTYPE%d'%iaxis
+         kUNIT='TUNIT%d'%iaxis
+         nn=self._h[kTYPE].strip()
+         try :
+            uu=self._h[kUNIT].strip() 
+         except :
+            uu=''
+         if Verbose == True : print iaxis,kTYPE,nn,kUNIT,uu,
+         self.newmap(nn,value=self._p[ihdu].data[nn],unit=uu)
+         if Verbose == True : print self[nn].shape,self.SHAPE()
+      #
+      try :
+         self.R['v']=self['_row_values'][:,0]
+         self.R['v'].shape=self.R['v'].size
+         self.R['delta']=self.R['v'][1]-self.R['v'][0]
+      except :
+         pass
+      #
+      try :
+         self.C['v']=self['_col_values'][0]
+         self.C['v'].shape=self.C['v'].size
+         self.C['delta']=self.C['v'][1]-self.C['v'][0]
+      except :
+         pass
 
-         #self.long = _ANGLE(deg=(ipxl-self.CenterCol)*self.pixsize.deg+self.center.long.deg)
-         #print "Longitude  in range : ",self.long.deg.min(),self.long.deg.max()," deg"
-         
-         #self.colat = _ANGLE(deg=(ipxl-self.CenterRow)*self.pixsize.deg+self.center.colat.deg)
-         #print "Colatitude in range : ",self.colat.deg.min(),self.colat.deg.max()," deg"
-         
-         #mapM = _MAP(len(self.long),len(self.colat)).m
-         #for i_c in self.columns() : 
-            #mapM[:,i_c] = self.colat.deg[::-1]
-         #self.mapCols = _ANGLE(deg = mapM)
    
-         #mapM = _MAP(len(self.long),len(self.colat)).m
-         #for i_r in self.rows() : 
-            #mapM[i_r,:] = self.long.deg
-         #self.mapRows = _ANGLE(deg = mapM)
-         
-         #cLong = np.cos(self.mapRows.rad)
-         #sLong = np.sin(self.mapRows.rad)
-         
-         #cColat = np.cos(self.mapCols.rad)
-         #sColat = np.sin(self.mapCols.rad)
-         
-         #self.mapX = sColat*cLong
-         #self.mapY = sColat*sLong
-         #self.mapZ = cColat
-
-   #def mapColsIdx(self) :
-      #mapM = _MAP(len(self.long),len(self.colat)).m
-      #for i_c in self.columns() : 
-         #mapM[:,i_c] = i_c
-      #return mapM
-   
-   #def mapRowsIdx(self) :
-      #mapM = _MAP(len(self.long),len(self.colat)).m
-      #for i_r in self.rows() : 
-         #mapM[i_r,:] = i_r
-      #return mapM
-   
-   #def banner(self) :
-      #""" shows the map grid content """
-      #print """
-#Center              = (%.12f,%.12f) deg
-#Center (Col, Row)   = (%d,%d) 
-#PixelSize           = %.12f deg
-#Radius              = %.12f deg
-#Name (Cols, Rows)   = (%s, %s) 
-#Name (X, Y)         = (%s, %s) 
-#Num  (Cols, Rows)   = (%d, %d) 
-      #""" % (self.center.long.deg,self.center.colat.deg
-         #,self.CenterCol, self.CenterRow
-         #,self.pixsize.deg
-         #,self.map_radius.deg
-         #,self.NameCols,self.NameRows
-         #,self.NameX,self.NameY
-         #,self.NCols,self.NRows)
-
-   #def columns(self,row=-1) :
-      #""" indexes of columns in map """
-      #return range(len(self.long))
-      #""" indexes of rows in map """
-   
-   #def rows(self,column=-1) :
-      #return range(len(self.colat))
-   
-   #def select_pixels(self,LstLongDeg=None,LstColatDeg=None,LstLongRad=None,LstColatRad=None) :
-      #if LstLongDeg != None :
-         #inLong = _ANGLE(deg=LstLongDeg)
-      #if LstLongRad != None :
-         #inLong = _ANGLE(rad=LstLongRad)
-         
-      #if LstColatDeg != None :
-         #inColat = _ANGLE(deg=LstColatDeg)
-      #if LstColatRad != None :
-         #inColat = _ANGLE(rad=LstColatRad)
-      
-      #center_long_rad =  np.arcsin(np.sin(self.center.long.rad))
-      #dLong = (np.arcsin(np.sin(inLong.rad))-center_long_rad)/self.pixsize.rad
-      #dColat = (inColat.rad - self.center.colat.rad)/self.pixsize.rad
-      
-      #try : 
-         #len(dColat) 
-      #except :
-         #dColat = np.array([dColat])
-
-      #iCols = []
-      #try : 
-         #for i in range(len(dLong)) :
-            #iCols.append(np.round(dLong[i])+self.CenterCol)
-      #except :
-         #iCols.append(np.round(dLong)+self.CenterCol)
-      #iRows = []
-      #try : 
-         #for i in range(len(dColat)) :
-            #iRows.append(np.round(dColat[i])+self.CenterRow)
-      #except :
-         #iRows.append(np.round(dColat)+self.CenterRow)
-      #return {'row':iRows,'col':iCols} #return _PIXEL_LIST(irows=iRows,icols=iCols)
-      
-   #def inside(self,i_row,i_col) :
-      #return (0 <= i_row and i_row < self.NRows) and (0 <= i_col and i_col < self.NCols)
-   
-   #def dump(self,output) :
-      #if type(output) == types.FileType :
-         #_output = output
-         #close_at_end = False
-      #else :
-         #close_at_end = True
-         #self.pickle_name = output
-         #try :
-            #_output = open(output,'wb') 
-         #except :
-            #return False
-      #pickle.dump(self.pickle_name,_output)
-      #self.center.dump(_output)
-      #self.pixsize.dump(_output)
-      #self.map_radius.dump(_output)
-      #self.long.dump(_output)
-      #self.colat.dump(_output)
-      #pickle.dump(self.NameCols,_output)
-      #pickle.dump(self.NameRows,_output)
-      #pickle.dump(self.NameX,_output)
-      #pickle.dump(self.NameY,_output)
-      #pickle.dump(self.NCols,_output)
-      #pickle.dump(self.NRows,_output)
-      #pickle.dump(self.CenterCol,_output)
-      #pickle.dump(self.CenterRow,_output)
-      #self.mapCols.dump(_output)
-      #self.mapRows.dump(_output)
-      #pickle.dump(self.mapX,_output)
-      #pickle.dump(self.mapY,_output)
-      #pickle.dump(self.mapZ,_output)
-      #pickle.dump(self.SPATable,_output)
-      #if close_at_end :
-         #_output.close()
-      #return True
-      
-   #def load(self,Input) :
-      #if type(Input)==types.FileType :
-         #_Input = Input 
-         #close_at_end = False
-      #else :
-         #close_at_end = True
-         #try :
-            #_Input = open(Input,'rb') 
-         #except :
-            #return False
-      #self.pickle_name = pickle.load(_Input)
-      #self.center = _CENTER(0,0,Input=_Input)
-      #self.pixsize = _ANGLE(0,0,Input=_Input)
-      #self.map_radius = _ANGLE(0,0,Input=_Input)
-      #self.long = _ANGLE(0,0,Input=_Input)
-      #self.colat = _ANGLE(0,0,Input=_Input)
-      #self.NameCols = pickle.load(_Input)
-      #self.NameRows = pickle.load(_Input)
-      #self.NameX = pickle.load(_Input)
-      #self.NameY = pickle.load(_Input)
-      #self.NCols = pickle.load(_Input)
-      #self.NRows = pickle.load(_Input)
-      #self.CenterCol = pickle.load(_Input)
-      #self.CenterRow = pickle.load(_Input)
-      #self.mapCols = _ANGLE(0,0,Input=_Input)
-      #self.mapRows = _ANGLE(0,0,Input=_Input)
-      #self.mapX = pickle.load(_Input)
-      #self.mapY = pickle.load(_Input)
-      #self.mapZ = pickle.load(_Input)
-      #self.SPATable = pickle.load(_Input)
-      #if close_at_end :
-         #_Input.close()
-         
-   #def add_sample_pixel_association_table(self,Mob_Microstripe_DB=None,fh=None,) :
-      #""" adds the sample - pixel association table (SPATable)
-         #SPATable['stripe'] = stripe number (int)
-         #SPATable['sample'] = sample number (int)
-         #SPATable['row'] = row on the map (int)
-         #SPATable['col'] = column on the map (int)
-      #"""
-
-
 class IndexHDU :
    def __init__(self,hdu) :
       import copy
@@ -2006,6 +2033,25 @@ class MapGridCube(MapGrid) :
    
 if __name__=='__main__' :
    import numpy as np
+   
+   #test creation empty map
+   print "test creation empty map"
+   GMEmpty = MapGrid(mapname='GMEmpty')
+   
+   #test creation map with shape [100,200]
+   GM12=MapGrid(Rows=100,Cols=200,mapname='GM12')
+
+   #test creation map with GridAxis
+   GMD12=MapGrid(Cols=GridAxis('x','deg',np.arange(0.,360.,1.),periodic=True),Rows=GridAxis('y','deg',np.arange(-18.,19.,1.)),mapname='GMD12')
+
+   #test creation map with GridAxis
+   GMA12=MapGrid(Cols=np.arange(-10,11,1.),Rows=np.arange(22,-1,-1),mapname='GMA12')
+
+   #test creation map with model
+   GMM12=MapGrid(model=GMA12['_row_values']**2+GMA12['_col_values']**2)
+   
+   stop
+   
    GM=MapGrid(GridAxis('x','deg',arange(0.,360.,1.,period=True)),GridAxis('y','deg',arange(-18.,19.,1.)))
    GM.M['sinCol']=np.sin(np.deg2rad(GM['_col_values'])) 
 
